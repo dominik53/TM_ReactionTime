@@ -205,7 +205,18 @@ void displayScreen(int screenIndex){
 
       break;
     }
+    case 2: // in progress
+    {
+      char LCDcontent[4][21] = {
+        "                    ",
+        "        ...         ",
+        "                    ",
+        "                    "
+      };
+      
 
+      break;
+    }
 
     default:
       break;
