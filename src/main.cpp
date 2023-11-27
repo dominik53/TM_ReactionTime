@@ -4,7 +4,8 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-#define TEST_COUNT 5 // min=3 max=33
+#define TEST_COUNT 5 // min=1 max=33
+#define TEST_MAX_TIME 10000 // ms, max=99999
 
 #define BUTT_1 9
 #define REACT_BUTT_1 10 // wzrok
@@ -15,8 +16,10 @@
 #define VIBRATOR 4
 #define SDA_PIN 5
 #define SCL_PIN 6
+#define FREE_ANALOG_PIN 2
 
 TaskHandle_t task1;
+TaskHandle_t task2;
 LiquidCrystal_I2C lcd(0x27,2,1,0,4,5,6,7,3,POSITIVE);
 
 // LCD
@@ -28,36 +31,39 @@ uint8_t customCharZ[8] = {4,0,31,2,4,8,31,0};         // ż
 uint8_t customCharS[8] = {2,4,15,8,14,1,30,0};        // ś
 uint8_t customCharArrowRight[8] = {0,4,2,31,2,4,0,0}; // arrow right
 
-  // test session
-  uint8_t testQueue[TEST_COUNT*3];
-  int currentTest=1;
-  int reactionTime1[TEST_COUNT];  // ms
-  int reactionTime2[TEST_COUNT];  // ms
-  int reactionTime3[TEST_COUNT];  // ms
-  int meanReaction[3];            // ms
+// test session
+uint8_t testQueue[TEST_COUNT*3];
+int currentTest=1;
+int reactionTime1[TEST_COUNT];  // ms
+int reactionTime2[TEST_COUNT];  // ms
+int reactionTime3[TEST_COUNT];  // ms
+int meanReaction[3];            // ms
 
 // functions
 void scanI2C(void *parameter);        // dev only - show active i2c addresses
 void performTests(void *parameter);   // handle tests
+void buttonHandle(void *parameter);   // handles control button
 void displayScreen(int screenIndex);  // display screen on LCD
 void restartSession();                // restart test session
-int fillQueue();                      // fill tests queue
+int fillQueue();                      // fill tests queue with 1, 2, 3
 
 void setup() {
   Serial.begin(115200);
+
+  randomSeed(analogRead(FREE_ANALOG_PIN));
 
   pinMode(BUTT_1, INPUT_PULLUP);
   pinMode(REACT_BUTT_1, INPUT_PULLUP);
   pinMode(REACT_BUTT_2, INPUT_PULLUP);
   pinMode(REACT_BUTT_3, INPUT_PULLUP);
+  
   pinMode(LED, OUTPUT);
-  pinMode(BUZZER, OUTPUT);
-  pinMode(VIBRATOR, OUTPUT);
-
   digitalWrite(LED, LOW);
+  pinMode(BUZZER, OUTPUT);
   digitalWrite(BUZZER, LOW);
+  pinMode(VIBRATOR, OUTPUT);
   digitalWrite(VIBRATOR, LOW);
-
+  
   Wire.begin(SDA_PIN,SCL_PIN);
   lcd.begin(20, 4);
 
@@ -69,45 +75,185 @@ void setup() {
   lcd.createChar(5, customCharArrowRight);
   
   // delay(5000);
-  // xTaskCreatePinnedToCore(serverConfig,"serverConfig",2048,nullptr,1,&task1,1 );
+  xTaskCreatePinnedToCore(buttonHandle,"buttonHandle",1024,nullptr,1,&task1,1 );
 
   displayScreen(currentScreen++); // project info
   displayScreen(currentScreen);   // home
 }
 
 void loop() {
-  if(digitalRead(BUTT_1)==LOW){
-    delay(50);
-
-    switch(currentScreen){
-      case 1:{
-        restartSession();
-
-        if(fillQueue()){
-          Serial.println("Blad queue");
-        }
-
-        currentScreen=2;
-        displayScreen(currentScreen);
-        
-        // losuj czas 2-4s, zacznij pomiar czasu, zmierz roznice, zapisz i powtorz
-        // xTaskCreatePinnedToCore(serverConfig,"serverConfig",1024,nullptr,1,&task1,1 );
-
-        break;
-      }
-      
-      default:
-          break;
-    }
-    
-    while (digitalRead(BUTT_1) == LOW) {
-      delay(50);
-    }
-  }
 
 }
 ///////////////////
 
+
+void buttonHandle(void *parameter){
+  for(;;){
+    if(digitalRead(BUTT_1)==LOW){
+      delay(50);
+
+      switch(currentScreen){
+        case 1:{
+          currentScreen=2;
+          xTaskCreatePinnedToCore(performTests,"performTests",4096,nullptr,1,&task2,1 );
+
+          break;
+        }
+        case 2:{
+          vTaskDelete(task2);
+          currentScreen=1;
+          displayScreen(currentScreen);
+          break;
+        }
+        case 3:{
+          currentScreen=1;
+          displayScreen(currentScreen);
+          break;
+        }
+      
+        default:
+            break;
+      }
+    
+      while (digitalRead(BUTT_1) == LOW) {
+        delay(50);
+      }
+    }
+  }
+  vTaskDelete(NULL);
+}
+
+void performTests(void *parameter){
+  restartSession();
+
+  if(fillQueue()){
+    Serial.println("Error when populating queue");
+    vTaskDelete(NULL);
+  }
+
+  bool BUTT1 = false;
+  bool BUTT2 = false;
+  bool BUTT3 = false;
+  unsigned long start = 0;
+  int A = 0;
+  int B = 0;
+  int C = 0;
+
+  unsigned long reactiontime = 0;
+
+  for (int i = 0; i < (TEST_COUNT * 3); i++){
+    
+    displayScreen(currentScreen);
+    reactiontime = 0;
+    BUTT1 = false;
+    BUTT2 = false;
+    BUTT3 = false;
+    delay(random(2000,4001)); // random delay from 2 to 4 sec
+
+    if(testQueue[i]==1){
+      digitalWrite(LED, HIGH);
+    }else if(testQueue[i]==2){
+      digitalWrite(BUZZER, HIGH);
+    }else if(testQueue[i]==3){
+      digitalWrite(VIBRATOR, HIGH);
+    }else{
+      Serial.println("testQueue value not expected.");
+      vTaskDelete(NULL);
+    }
+
+    start = millis();
+
+    while (reactiontime < TEST_MAX_TIME){
+      if (digitalRead(REACT_BUTT_1) == LOW){
+        reactiontime = start - millis();
+        delay(50);
+        BUTT1 = true;
+        while (digitalRead(REACT_BUTT_1) == LOW){
+          delay(50);
+        }
+      }
+      if (digitalRead(REACT_BUTT_2) == LOW){
+        reactiontime = start - millis();
+        delay(50);
+        BUTT2 = true;
+        while (digitalRead(REACT_BUTT_2) == LOW){
+          delay(50);
+        }
+      }
+      if (digitalRead(REACT_BUTT_3) == LOW){
+        reactiontime = start - millis();
+        delay(50);
+        BUTT3 = true;
+        while (digitalRead(REACT_BUTT_3) == LOW){
+          delay(50);
+        }
+      }
+
+      if(BUTT1 || BUTT2 || BUTT3){
+        if ((BUTT1 && !BUTT2 && !BUTT3) || (!BUTT1 && BUTT2 && !BUTT3) || (!BUTT1 && !BUTT2 && BUTT3)){ // if only 1 button pushed
+          if(testQueue[i]==1 && BUTT1){
+            reactionTime1[A++] = reactiontime;
+          }else if(testQueue[i]==2 && BUTT2){
+            reactionTime2[B++] = reactiontime;
+          }else if(testQueue[i]==3 && BUTT3){
+            reactionTime3[C++] = reactiontime;
+          }else{
+            BUTT1 = false;
+            BUTT2 = false;
+            BUTT3 = false;
+            continue;
+          }
+
+          break;
+        }else{ // if more than 1 button pushed
+          reactiontime = start - millis();
+          BUTT1 = false;
+          BUTT2 = false;
+          BUTT3 = false;
+          delay(50);
+        }
+      }else{ // if no buttons pushed
+        reactiontime = start - millis();
+      }
+      
+    }
+
+    if(testQueue[i]==1){
+      digitalWrite(LED, LOW);
+    }else if(testQueue[i]==2){
+      digitalWrite(BUZZER, LOW);
+    }else if(testQueue[i]==3){
+      digitalWrite(VIBRATOR, LOW);
+    }else{
+      Serial.println("testQueue value not expected.");
+      vTaskDelete(NULL);
+    }
+
+    if (reactiontime >= TEST_MAX_TIME){ // didnt react at all
+      currentScreen=1;
+      displayScreen(currentScreen);
+
+      vTaskDelete(NULL);
+    }
+
+    currentTest++;
+  }
+
+  int temp1=0,temp2=0,temp3=0;
+  for(int i=0;i<TEST_COUNT;i++){
+    temp1+=reactionTime1[i];
+    temp2+=reactionTime2[i];
+    temp3+=reactionTime3[i];
+  }
+  meanReaction[0]=temp1/TEST_COUNT;
+  meanReaction[1]=temp2/TEST_COUNT;
+  meanReaction[2]=temp3/TEST_COUNT;
+
+  currentScreen=3;
+  displayScreen(currentScreen);
+
+  vTaskDelete(NULL);
+}
 
 void restartSession(){
   currentTest=1;
@@ -128,17 +274,26 @@ void restartSession(){
 
 int fillQueue() {
   int x=0;
-    for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < TEST_COUNT; j++) {
-            x = rand() % (TEST_COUNT * 3);
-            while (testQueue[x] != 0) {
-                x++;
-                if (x > (3* TEST_COUNT - 1))
-                    x = 0;
-            }
-            testQueue[x] = i + 1;
+  bool infinite=false;
+
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < TEST_COUNT; j++) {
+      infinite=false;
+      x = random(3 * TEST_COUNT - 1);
+      while (testQueue[x] != 0) {
+        if (++x > (3 * TEST_COUNT - 1)){
+          x = 0;
+          if(infinite){
+            Serial.println("Infinite loop in fillQueue");
+          }else{
+            infinite=true;
+          }
         }
+      }
+      testQueue[x] = i + 1;
     }
+  }
+
   return 0;
 }
 
@@ -247,12 +402,49 @@ void displayScreen(int screenIndex){
         // "dotyk p xxxxx ms    "
 
       String tempVariable1="wzrok p ";
-      if(currentTest>9){
-        tempVariable1 += String(currentTest) + "/";
+      if(meanReaction[0]>99999){
+        tempVariable1 += "xxxxx ms    ";
+      }else if(meanReaction[0]>9999){
+        tempVariable1 += String(meanReaction[0]) + " ms    ";
+      }else if(meanReaction[0]>999){
+        tempVariable1 += "0" + String(meanReaction[0]) + " ms    ";
+      }else if(meanReaction[0]>99){
+        tempVariable1 += "00" + String(meanReaction[0]) + " ms    ";
+      }else if(meanReaction[0]>9){
+        tempVariable1 += "000" + String(meanReaction[0]) + " ms    ";
       }else{
-        tempVariable1 += "0" + String(currentTest) + "/";
+        tempVariable1 += "0000" + String(meanReaction[0]) + " ms    ";
       }
       
+      String tempVariable2="sluch p ";
+      if(meanReaction[1]>99999){
+        tempVariable2 += "xxxxx ms    ";
+      }else if(meanReaction[1]>9999){
+        tempVariable2 += String(meanReaction[1]) + " ms    ";
+      }else if(meanReaction[1]>999){
+        tempVariable2 += "0" + String(meanReaction[1]) + " ms    ";
+      }else if(meanReaction[1]>99){
+        tempVariable2 += "00" + String(meanReaction[1]) + " ms    ";
+      }else if(meanReaction[1]>9){
+        tempVariable2 += "000" + String(meanReaction[1]) + " ms    ";
+      }else{
+        tempVariable2 += "0000" + String(meanReaction[1]) + " ms    ";
+      }
+
+      String tempVariable3="dotyk p ";
+      if(meanReaction[2]>99999){
+        tempVariable3 += "xxxxx ms    ";
+      }else if(meanReaction[2]>9999){
+        tempVariable3 += String(meanReaction[2]) + " ms    ";
+      }else if(meanReaction[2]>999){
+        tempVariable3 += "0" + String(meanReaction[2]) + " ms    ";
+      }else if(meanReaction[2]>99){
+        tempVariable3 += "00" + String(meanReaction[2]) + " ms    ";
+      }else if(meanReaction[2]>9){
+        tempVariable3 += "000" + String(meanReaction[2]) + " ms    ";
+      }else{
+        tempVariable3 += "0000" + String(meanReaction[2]) + " ms    ";
+      }
 
       strcpy(LCDcontent[0], "Czas reakcji:       ");
       strcpy(LCDcontent[1], tempVariable1.c_str());
@@ -262,7 +454,13 @@ void displayScreen(int screenIndex){
       for(int i=0;i<4;i++){
         lcd.setCursor(0, i);
         for(int j=0;j<20;j++){
-          lcd.print(LCDcontent[i][j]);
+          if(i==2 && j==1){ // ł
+            lcd.write(byte(2));
+          }else if((i==1 && j==6)||(i==2 && j==6)||(i==3 && j==6)){ // arrows
+            lcd.write(byte(5));
+          }else{
+            lcd.print(LCDcontent[i][j]);
+          }
         }
       }
 
