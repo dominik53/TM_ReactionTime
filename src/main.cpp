@@ -4,6 +4,8 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
+#define TEST_COUNT 5 // min=3 max=33
+
 #define BUTT_1 9
 #define REACT_BUTT_1 10 // wzrok
 #define REACT_BUTT_2 1  // słuch
@@ -26,9 +28,20 @@ uint8_t customCharZ[8] = {4,0,31,2,4,8,31,0};         // ż
 uint8_t customCharS[8] = {2,4,15,8,14,1,30,0};        // ś
 uint8_t customCharArrowRight[8] = {0,4,2,31,2,4,0,0}; // arrow right
 
+  // test session
+  uint8_t testQueue[TEST_COUNT*3];
+  int currentTest=1;
+  int reactionTime1[TEST_COUNT];  // ms
+  int reactionTime2[TEST_COUNT];  // ms
+  int reactionTime3[TEST_COUNT];  // ms
+  int meanReaction[3];            // ms
+
 // functions
 void scanI2C(void *parameter);        // dev only - show active i2c addresses
+void performTests(void *parameter);   // handle tests
 void displayScreen(int screenIndex);  // display screen on LCD
+void restartSession();                // restart test session
+int fillQueue();                      // fill tests queue
 
 void setup() {
   Serial.begin(115200);
@@ -67,8 +80,19 @@ void loop() {
     delay(50);
 
     switch(currentScreen){
-      case 2:{ // przyklad: wcisniemy przycisk i jestesmy na ekranie przeprowadzania testu
-        // operacja
+      case 1:{
+        restartSession();
+
+        if(fillQueue()){
+          Serial.println("Blad queue");
+        }
+
+        currentScreen=2;
+        displayScreen(currentScreen);
+        
+        // losuj czas 2-4s, zacznij pomiar czasu, zmierz roznice, zapisz i powtorz
+        // xTaskCreatePinnedToCore(serverConfig,"serverConfig",1024,nullptr,1,&task1,1 );
+
         break;
       }
       
@@ -81,67 +105,42 @@ void loop() {
     }
   }
 
-
-  if(digitalRead(REACT_BUTT_1)==LOW){
-    delay(50);
-
-    switch(currentScreen){
-      case 2:{
-        
-        break;
-      }
-      
-      default:
-          break;
-    }
-
-    while (digitalRead(REACT_BUTT_1) == LOW) {
-      delay(50);
-    }
-  }
-
-
-  if(digitalRead(REACT_BUTT_2)==LOW){
-    delay(50);
-
-    switch(currentScreen){
-      case 2:{
-        
-        break;
-      }
-      
-      default:
-          break;
-    }
-
-    while (digitalRead(REACT_BUTT_2) == LOW) {
-      delay(50);
-    }
-  }
-
-
-  if(digitalRead(REACT_BUTT_3)==LOW){
-    delay(50);
-    
-    switch(currentScreen){
-      case 2:{
-        
-        break;
-      }
-      
-      default:
-          break;
-    }
-    
-    while (digitalRead(REACT_BUTT_3) == LOW) {
-      delay(50);
-    }
-  }
-
-
 }
 ///////////////////
 
+
+void restartSession(){
+  currentTest=1;
+  for(int i=0;i<TEST_COUNT*3;i++){
+    testQueue[i]=0;
+  }
+  for(int i=0;i<TEST_COUNT;i++){
+    reactionTime1[i]=0;
+    reactionTime2[i]=0;
+    reactionTime3[i]=0;
+  }
+  meanReaction[0]=0;
+  meanReaction[1]=0;
+  meanReaction[2]=0;
+
+  return;
+}
+
+int fillQueue() {
+  int x=0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < TEST_COUNT; j++) {
+            x = rand() % (TEST_COUNT * 3);
+            while (testQueue[x] != 0) {
+                x++;
+                if (x > (3* TEST_COUNT - 1))
+                    x = 0;
+            }
+            testQueue[x] = i + 1;
+        }
+    }
+  return 0;
+}
 
 void displayScreen(int screenIndex){
   lcd.clear();
@@ -207,13 +206,65 @@ void displayScreen(int screenIndex){
     }
     case 2: // in progress
     {
-      char LCDcontent[4][21] = {
-        "                    ",
-        "        ...         ",
-        "                    ",
-        "                    "
-      };
+      char LCDcontent[4][21];
+        // "  Testy w toku...   ",
+        // "       xx/xx        ",
+        // "                    ",
+        // "                    "
+
+      String tempVariable="       ";
+      if(currentTest>9){
+        tempVariable += String(currentTest) + "/";
+      }else{
+        tempVariable += "0" + String(currentTest) + "/";
+      }
+      if(TEST_COUNT*3>9){
+        tempVariable += String(TEST_COUNT*3) + "        ";
+      }else{
+        tempVariable += "0" + String(TEST_COUNT*3) + "        ";
+      }
+
+      strcpy(LCDcontent[0], "  Testy w toku...   ");
+      strcpy(LCDcontent[1], tempVariable.c_str());
+      strcpy(LCDcontent[2], "                    ");
+      strcpy(LCDcontent[3], "                    ");
       
+      for(int i=0;i<4;i++){
+        lcd.setCursor(0, i);
+        for(int j=0;j<20;j++){
+          lcd.print(LCDcontent[i][j]);
+        }
+      }
+
+      break;
+    }
+    case 3: // show results
+    {
+      char LCDcontent[4][21];
+        // "Czas reakcji:       ",
+        // "wzrok p xxxxx ms    ",
+        // "słuch p xxxxx ms    ",
+        // "dotyk p xxxxx ms    "
+
+      String tempVariable1="wzrok p ";
+      if(currentTest>9){
+        tempVariable1 += String(currentTest) + "/";
+      }else{
+        tempVariable1 += "0" + String(currentTest) + "/";
+      }
+      
+
+      strcpy(LCDcontent[0], "Czas reakcji:       ");
+      strcpy(LCDcontent[1], tempVariable1.c_str());
+      strcpy(LCDcontent[2], tempVariable2.c_str());
+      strcpy(LCDcontent[3], tempVariable3.c_str());
+      
+      for(int i=0;i<4;i++){
+        lcd.setCursor(0, i);
+        for(int j=0;j<20;j++){
+          lcd.print(LCDcontent[i][j]);
+        }
+      }
 
       break;
     }
