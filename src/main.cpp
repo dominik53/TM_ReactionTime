@@ -4,13 +4,13 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
-#define TEST_COUNT 5 // min=1 max=33
+#define TEST_COUNT 5        // per 1 sense, min=1 max=33
 #define TEST_MAX_TIME 10000 // ms, max=99999
 
 #define BUTT_1 9
-#define REACT_BUTT_1 10 // wzrok
-#define REACT_BUTT_2 1  // słuch
-#define REACT_BUTT_3 0  // dotyk
+#define REACT_BUTT_1 10 // sight
+#define REACT_BUTT_2 1  // hearing
+#define REACT_BUTT_3 0  // touch
 #define LED 7
 #define BUZZER 3
 #define VIBRATOR 4
@@ -74,7 +74,7 @@ void setup() {
   lcd.createChar(4, customCharS);
   lcd.createChar(5, customCharArrowRight);
   
-  // delay(5000);
+  // delay(10000); // a więc coś poszło nie tak :(
   xTaskCreatePinnedToCore(buttonHandle,"buttonHandle",1024,nullptr,1,&task1,1 );
 
   displayScreen(currentScreen++); // project info
@@ -105,19 +105,19 @@ void buttonHandle(void *parameter){
           displayScreen(currentScreen);
           break;
         }
-        case 3:{
+      
+        default:{
           currentScreen=1;
           displayScreen(currentScreen);
           break;
         }
-      
-        default:
-            break;
       }
     
       while (digitalRead(BUTT_1) == LOW) {
         delay(50);
       }
+    }else{
+      delay(20);
     }
   }
   vTaskDelete(NULL);
@@ -142,7 +142,6 @@ void performTests(void *parameter){
   unsigned long reactiontime = 0;
 
   for (int i = 0; i < (TEST_COUNT * 3); i++){
-    
     displayScreen(currentScreen);
     reactiontime = 0;
     BUTT1 = false;
@@ -163,7 +162,7 @@ void performTests(void *parameter){
 
     start = millis();
 
-    while (reactiontime < TEST_MAX_TIME){
+    while (reactiontime < TEST_MAX_TIME){ // todo nie moze tu byc while bo program sie zacina
       if (digitalRead(REACT_BUTT_1) == LOW){
         reactiontime = start - millis();
         delay(50);
@@ -190,29 +189,33 @@ void performTests(void *parameter){
       }
 
       if(BUTT1 || BUTT2 || BUTT3){
-        if ((BUTT1 && !BUTT2 && !BUTT3) || (!BUTT1 && BUTT2 && !BUTT3) || (!BUTT1 && !BUTT2 && BUTT3)){ // if only 1 button pushed
+        if ((BUTT1 && !BUTT2 && !BUTT3) || (!BUTT1 && BUTT2 && !BUTT3) || (!BUTT1 && !BUTT2 && BUTT3)){ // if only 1 button pressed
           if(testQueue[i]==1 && BUTT1){
             reactionTime1[A++] = reactiontime;
+            break;
           }else if(testQueue[i]==2 && BUTT2){
             reactionTime2[B++] = reactiontime;
+            break;
           }else if(testQueue[i]==3 && BUTT3){
             reactionTime3[C++] = reactiontime;
+            break;
           }else{
             BUTT1 = false;
             BUTT2 = false;
             BUTT3 = false;
+            Serial.println("Wrong button pressed.");
             continue;
           }
 
           break;
-        }else{ // if more than 1 button pushed
-          reactiontime = start - millis();
+        }else{ // if more than 1 button pressed
           BUTT1 = false;
           BUTT2 = false;
           BUTT3 = false;
+          Serial.println("More than 1 button pressed.");
           delay(50);
         }
-      }else{ // if no buttons pushed
+      }else{ // if no buttons pressed
         reactiontime = start - millis();
       }
       
@@ -239,15 +242,15 @@ void performTests(void *parameter){
     currentTest++;
   }
 
-  int temp1=0,temp2=0,temp3=0;
+  long temp1=0,temp2=0,temp3=0;
   for(int i=0;i<TEST_COUNT;i++){
     temp1+=reactionTime1[i];
     temp2+=reactionTime2[i];
     temp3+=reactionTime3[i];
   }
-  meanReaction[0]=temp1/TEST_COUNT;
-  meanReaction[1]=temp2/TEST_COUNT;
-  meanReaction[2]=temp3/TEST_COUNT;
+  meanReaction[0]=(int)round(temp1/TEST_COUNT);
+  meanReaction[1]=(int)round(temp2/TEST_COUNT);
+  meanReaction[2]=(int)round(temp3/TEST_COUNT);
 
   currentScreen=3;
   displayScreen(currentScreen);
