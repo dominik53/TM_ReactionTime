@@ -100,6 +100,10 @@ void buttonHandle(void *parameter){
           break;
         }
         case 2:{
+          digitalWrite(LED, LOW);
+          digitalWrite(BUZZER, LOW);
+          digitalWrite(VIBRATOR, LOW);
+          
           vTaskDelete(task2);
           currentScreen=1;
           displayScreen(currentScreen);
@@ -147,7 +151,11 @@ void performTests(void *parameter){
     BUTT1 = false;
     BUTT2 = false;
     BUTT3 = false;
+
     delay(random(2000,4001)); // random delay from 2 to 4 sec
+    while (digitalRead(REACT_BUTT_1) == LOW || digitalRead(REACT_BUTT_2) == LOW || digitalRead(REACT_BUTT_3) == LOW){
+      delay(random(2000,4001)); // random delay from 2 to 4 sec
+    }
 
     if(testQueue[i]==1){
       digitalWrite(LED, HIGH);
@@ -162,30 +170,21 @@ void performTests(void *parameter){
 
     start = millis();
 
-    while (reactiontime < TEST_MAX_TIME){ // todo nie moze tu byc while bo program sie zacina
+    while (reactiontime < TEST_MAX_TIME){
       if (digitalRead(REACT_BUTT_1) == LOW){
-        reactiontime = start - millis();
+        reactiontime = millis() - start;
         delay(50);
         BUTT1 = true;
-        while (digitalRead(REACT_BUTT_1) == LOW){
-          delay(50);
-        }
       }
       if (digitalRead(REACT_BUTT_2) == LOW){
-        reactiontime = start - millis();
+        reactiontime = millis() - start;
         delay(50);
         BUTT2 = true;
-        while (digitalRead(REACT_BUTT_2) == LOW){
-          delay(50);
-        }
       }
       if (digitalRead(REACT_BUTT_3) == LOW){
-        reactiontime = start - millis();
+        reactiontime = millis() - start;
         delay(50);
         BUTT3 = true;
-        while (digitalRead(REACT_BUTT_3) == LOW){
-          delay(50);
-        }
       }
 
       if(BUTT1 || BUTT2 || BUTT3){
@@ -216,7 +215,7 @@ void performTests(void *parameter){
           delay(50);
         }
       }else{ // if no buttons pressed
-        reactiontime = start - millis();
+        reactiontime = millis() - start;
       }
       
     }
